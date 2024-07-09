@@ -81,6 +81,7 @@ class TransTabFeatureExtractor:
         ignore_duplicate_cols: check if exists one col belongs to both cat/num or cat/bin or num/bin,
             if set `true`, the duplicate cols will be deleted, else throws errors.
         '''
+        # 用于将文本数据转换为模型可处理的标记ID。
         if os.path.exists('./transtab/tokenizer'):
             self.tokenizer = BertTokenizerFast.from_pretrained('./transtab/tokenizer')
         else:
@@ -89,8 +90,8 @@ class TransTabFeatureExtractor:
         self.tokenizer.__dict__['model_max_length'] = 512
         if disable_tokenizer_parallel: # disable tokenizer parallel
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        self.vocab_size = self.tokenizer.vocab_size
-        self.pad_token_id = self.tokenizer.pad_token_id
+        self.vocab_size = self.tokenizer.vocab_size # BERT标记器能够识别的不同词汇/标记的数量，BERT≈30,000
+        self.pad_token_id = self.tokenizer.pad_token_id # 填充标记的Id
 
         self.categorical_columns = categorical_columns
         self.numerical_columns = numerical_columns
@@ -114,9 +115,7 @@ class TransTabFeatureExtractor:
             self._solve_duplicate_cols(duplicate_cols)
 
     def __call__(self, x, shuffle=False) -> Dict:
-        '''
-        Parameters
-        ----------
+        ''' 
         x: pd.DataFrame 
             with column names and features.
 
@@ -138,6 +137,7 @@ class TransTabFeatureExtractor:
             'x_cat_input_ids':None,
             'x_bin_input_ids':None,
         }
+        # 又一次分出分类列、数值列、布尔列
         col_names = x.columns.tolist()
         cat_cols = [c for c in col_names if c in self.categorical_columns] if self.categorical_columns is not None else []
         num_cols = [c for c in col_names if c in self.numerical_columns] if self.numerical_columns is not None else []
@@ -154,19 +154,23 @@ class TransTabFeatureExtractor:
 
         # TODO:
         # mask out NaN values like done in binary columns
+        # 。。。这里不理解，加载数据集过程中已经进行了用众数填充Nan的预处理
         if len(num_cols) > 0:
-            x_num = x[num_cols]
+            x_num = x[num_cols]  # 根据列名选取数据
             x_num = x_num.fillna(0) # fill Nan with zero
             x_num_ts = torch.tensor(x_num.values, dtype=float)
+            # 把数值特征列名转化为张量
             num_col_ts = self.tokenizer(num_cols, padding=True, truncation=True, add_special_tokens=False, return_tensors='pt')
             encoded_inputs['x_num'] = x_num_ts
             encoded_inputs['num_col_input_ids'] = num_col_ts['input_ids']
             encoded_inputs['num_att_mask'] = num_col_ts['attention_mask'] # mask out attention
 
         if len(cat_cols) > 0:
-            x_cat = x[cat_cols].astype(str)
-            x_mask = (~pd.isna(x_cat)).astype(int)
+            x_cat = x[cat_cols].astype(str) # 根据列名选取数据
+            x_mask = (~pd.isna(x_cat)).astype(int) # ~ 是按位取反操作符，用于反转布尔值。
+            # .astype(int)将布尔值DataFrame 转换为整数类型 DataFrame
             x_cat = x_cat.fillna('')
+            # 将列名和内容连接起来，并使用掩码
             x_cat = x_cat.apply(lambda x: x.name + ' '+ x) * x_mask # mask out nan features
             x_cat_str = x_cat.agg(' '.join, axis=1).values.tolist()
             x_cat_ts = self.tokenizer(x_cat_str, padding=True, truncation=True, add_special_tokens=False, return_tensors='pt')
@@ -691,6 +695,7 @@ class TransTabModel(nn.Module):
         if binary_columns is not None:
             self.binary_columns = list(set(binary_columns))
 
+        # 特征提取器
         if feature_extractor is None:
             feature_extractor = TransTabFeatureExtractor(
                 categorical_columns=self.categorical_columns,
@@ -823,11 +828,13 @@ class TransTabModel(nn.Module):
 
         '''
 
+        # 从 config 字典中提取新的特征列名，并存储在 col_map 字典中：
         col_map = {}
         for k,v in config.items():
             if k in ['cat','num','bin']: col_map[k] = v
 
-        self.input_encoder.feature_extractor.update(**col_map)
+        # 使用新的特征列名更新特征提取器
+        self.input_encoder.feature_extractor.update(**col_map) 
         self.binary_columns = self.input_encoder.feature_extractor.binary_columns
         self.categorical_columns = self.input_encoder.feature_extractor.categorical_columns
         self.numerical_columns = self.input_encoder.feature_extractor.numerical_columns

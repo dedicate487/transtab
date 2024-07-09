@@ -185,14 +185,15 @@ def load_single_data(dataname, dataset_config=None, encode_cat=False, data_cut=N
         # drop cols which only have one unique value
         drop_cols = [col for col in attribute_names if X[col].nunique()<=1]
 
-        # 把dataframe转化成np.array是为了使用高端的布尔索引功能
-        all_cols = np.array(attribute_names)
+        # 如何辨别分类特征呢？
+        # 使用openml.datasets.getdata返回值中的categorical_indicator。
+        all_cols = np.array(attribute_names) # 把dataframe转化成np.array是为了使用高端的布尔索引功能
         categorical_indicator = np.array(categorical_indicator)
         cat_cols = [col for col in all_cols[categorical_indicator] if col not in drop_cols]
         num_cols = [col for col in all_cols[~categorical_indicator] if col not in drop_cols]
         all_cols = [col for col in all_cols if col not in drop_cols]
-        
-        # cat_cols包含了所有分类特征的表头名称，其中就有二分类特征，如果有dataset_config那么可以用它再分出二分类特征来
+        bin_cols = [] # 先在if内部声明的变量在if外使用会报错，所以在此先声明变量bin_cols
+        # cat_cols包含了所有分类特征的表头名称，其中就有binary特征，如果有dataset_config那么可以用它再分出binary特征来
         if dataset_config is not None:
             if 'bin' in dataset_config: bin_cols = [c for c in cat_cols if c in dataset_config['bin']]
         # 这步操作暂时没有效果

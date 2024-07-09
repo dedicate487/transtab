@@ -106,6 +106,8 @@ class Trainer:
             self.create_scheduler(num_train_steps, self.optimizer)
 
         start_time = time.time()
+        # trange()相当于tqdm(range())，二者接受同样的参数，tqdm是进度条类。
+        # desc='Epoch'：为进度条添加描述信息，显示在进度条的前面。
         for epoch in trange(args['num_epoch'], desc='Epoch'):
             ite = 0
             train_loss_all = 0
@@ -113,23 +115,26 @@ class Trainer:
                 for data in self.trainloader_list[dataindex]:
                     self.optimizer.zero_grad()
                     logits, loss = self.model(data[0], data[1])
-                    loss.backward()
-                    self.optimizer.step()
-                    train_loss_all += loss.item()
+                    loss.backward() # 反向传播
+                    self.optimizer.step() # 更新模型参数
+                    train_loss_all += loss.item() # 累加训练损失和迭代器“ite”
                     ite += 1
                     if self.lr_scheduler is not None:
-                        self.lr_scheduler.step()
+                        self.lr_scheduler.step() # 更新学习率
 
+            # 如果存在测试集，则在每个 epoch 结束后进行评估。计算评估结果的平均值，并输出结果。
             if self.test_set_list is not None:
                 eval_res_list = self.evaluate()
                 eval_res = np.mean(eval_res_list)
                 print('epoch: {}, test {}: {:.6f}'.format(epoch, self.args['eval_metric_name'], eval_res))
+                # 如果启用了早停机制，则检查是否满足早停条件，若满足则中断训练。
                 self.early_stopping(-eval_res, self.model)
                 if self.early_stopping.early_stop:
                     print('early stopped')
                     break
             print('epoch: {}, train loss: {:.4f}, lr: {:.6f}, spent: {:.1f} secs'.format(epoch, train_loss_all, self.optimizer.param_groups[0]['lr'], time.time()-start_time))
 
+        # 如果 output_dir 存在并且存在测试集，在训练结束后加载最优模型的权重，并保存最终的模型
         if os.path.exists(self.output_dir):
             if self.test_set_list is not None:
                 # load checkpoints
@@ -245,13 +250,19 @@ class Trainer:
 
         if not os.path.exists(output_dir): os.makedirs(output_dir, exist_ok=True)
         logger.info(f'saving model checkpoint to {output_dir}')
-        self.model.save(output_dir)
-        self.collate_fn.save(output_dir)
+        
+        self.model.save(output_dir) # 保存模型
+        self.collate_fn.save(output_dir) # 保存collate_fn
 
+        # 保存优化器状态
         if self.optimizer is not None:
             torch.save(self.optimizer.state_dict(), os.path.join(output_dir, constants.OPTIMIZER_NAME))
+        
+        # 保存学习率调度器状态
         if self.lr_scheduler is not None:
             torch.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, constants.SCHEDULER_NAME))
+        
+        # 保存训练参数
         if self.args is not None:
             train_args = {}
             for k,v in self.args.items():
